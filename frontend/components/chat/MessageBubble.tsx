@@ -42,8 +42,8 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
       <div
         className={
           isUser
-            ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[72%] text-sm"
-            : "bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[72%] text-sm"
+            ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[72%] text-sm whitespace-pre-wrap"
+            : "bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[72%] text-sm whitespace-pre-wrap"
         }
       >
         {message.isLoading ? <LoadingDots /> : message.content}

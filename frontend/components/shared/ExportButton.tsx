@@ -35,7 +35,11 @@ export default function ExportButton({
       if (url.startsWith('data:')) {
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'KSP_Profile_Export.txt';
+        let filename = 'KSP_Report_Export.pdf';
+        if (url.startsWith('data:text/plain')) {
+          filename = 'KSP_Report_Export.txt';
+        }
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

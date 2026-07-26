@@ -33,6 +33,17 @@ By leveraging Advanced Analytics, Network Mapping, and QuickML forecasting, Crim
 
 ---
 
+## 🔐 Demo Credentials
+
+To test the application's Role-Based Access Control, use the password **`KSP2026!`** with any of the following usernames:
+
+- **`investigator`**: Access to AI Chat and specific FIR case management.
+- **`supervisor`**: Access to Real-time Alerts and overarching command views.
+- **`analyst`**: Access to the Crime Hotspot Map and Criminal Network Graphs.
+- **`policymaker`**: Access to QuickML Forecasting and high-level analytics.
+
+---
+
 ## 💻 Setup & Execution Instructions
 
 This project is designed to be deployed directly to Zoho Catalyst.

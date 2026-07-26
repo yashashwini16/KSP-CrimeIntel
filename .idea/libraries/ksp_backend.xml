@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="ksp-backend">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/functions/ksp-backend.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

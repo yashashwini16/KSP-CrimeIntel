@@ -137,11 +137,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo credentials hint */}
-        <p className="mt-4 text-center text-[11px] text-white/30">
-          Demo: <span className="text-white/50">admin</span> / <span className="text-white/50">admin</span>
-        </p>
-
         {/* Footer */}
         <p className="mt-6 text-center text-[10px] text-white/20">
           Secured by Zoho Catalyst · Karnataka State Police © 2025

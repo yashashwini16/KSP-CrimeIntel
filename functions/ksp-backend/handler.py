@@ -123,7 +123,7 @@ def handler(request):
 
         # ── Map routes ────────────────────────────────────────
         if path.endswith('/api/map/hotspots') and method == 'GET':
-            return handle_hotspots(has_demo_auth)
+            return handle_hotspots(has_demo_auth, query_params)
 
         if path.endswith('/api/chat') and method == 'POST':
             return handle_chat(body)
@@ -186,10 +186,61 @@ def handler(request):
 
         # ── Exports ───────────────────────────────────────────
         if path.startswith('/api/export/'):
-            # Return a simple text file download for the demo
+            parts = path.split('/api/export/')[1].split('/')
+            export_type = parts[0] # 'case' or 'offender'
+            item_id = parts[1]
+            
+            if export_type == 'case':
+                case = _get_mock_case(item_id)
+                title = f"KSP CASE EXPORT: {case['fir_number']}"
+                lines = [
+                    f"FIR Number:      {case['fir_number']}",
+                    f"Incident Date:   {case['date']}",
+                    f"Crime Type:      {case['crime_type']}",
+                    f"District:        {case['district']}",
+                    f"Police Station:  {case['station']}",
+                    f"Status:          {case['status']}",
+                    f"Created At:      {case['created_at']}",
+                    f"",
+                    f"Case Narrative:",
+                    f"  {case['narrative']}",
+                    f"",
+                    f"Accused Details:",
+                    f"  Name: {case['accused'][0]['name']} (Role: {case['accused'][0]['role']})",
+                    f"",
+                    f"Victim Details:",
+                    f"  Name: {case['victims'][0]['name']} (Age: {case['victims'][0]['age']})",
+                    f"",
+                    f"Location Details:",
+                    f"  Address:   {case['locations'][0]['address']}",
+                    f"  Latitude:  {case['locations'][0]['latitude']:.4f}",
+                    f"  Longitude: {case['locations'][0]['longitude']:.4f}"
+                ]
+            else:
+                names = ["Ramesh Kumar", "Suresh Naik", "Ganesha Gowda", "Manjunath Patil", "Ravi Shankar", "Sanjay Singh", "Anil Reddy", "Prakash Rao", "Vijay Kumar", "Santosh K", "Kiran Y", "Raju N", "Pradeep M", "Vinay H", "Sunil P", "Harish G", "Mohan B", "Shivakumar T", "Naveen C", "Praveen V"]
+                idx = int(item_id) - 1
+                name = names[idx] if 0 <= idx < len(names) else f'Accused {item_id}'
+                
+                title = f"KSP OFFENDER PROFILE: {name}"
+                lines = [
+                    f"Offender Name:    {name}",
+                    f"Gender / Age:     Male / 28",
+                    f"Primary Address:  MG Road, Bangalore",
+                    f"Risk Score:       88 / 100",
+                    f"Active Profile:   Yes",
+                    f"Created At:       2026-01-01T00:00:00Z",
+                    f"",
+                    f"Latest Incident:  Theft",
+                    f"Known Associates: Kumar (A2), Raja (A1), Syed (A3)"
+                ]
+                
+            pdf_str = generate_pdf_helper(title, lines)
+            pdf_b64 = base64.b64encode(pdf_str.encode('latin-1')).decode()
+            url = f"data:application/pdf;base64,{pdf_b64}"
+            
             return json_response({
                 'status': 'Export initiated', 
-                'url': 'data:text/plain;charset=utf-8,CONFIDENTIAL%20KSP%20REPORT%0A%0AThis%20is%20a%20placeholder%20export%20file%20for%20the%20datathon.%20In%20production%2C%20this%20will%20be%20a%20detailed%20PDF%20report.'
+                'url': url
             })
 
         # ── Database Seeding ──────────────────────────────────
@@ -209,6 +260,10 @@ def handler(request):
 def handle_login(body):
     username = body.get('username', '').lower()
     password = body.get('password', '')
+    
+    if password != 'KSP2026!':
+        return json_response({'detail': 'Invalid username or password'}, 401)
+        
     if not username:
         username = 'investigator'
     
@@ -216,43 +271,115 @@ def handle_login(body):
     elif username == 'supervisor': role = 'supervisor'
     elif username == 'policymaker': role = 'policymaker'
     else: role = 'investigator'
-    
-    # Always succeed for demo
     payload = json.dumps({'sub': username, 'role': role})
     token = 'demo.' + base64.b64encode(payload.encode()).decode()
     return json_response({'access_token': token, 'username': username, 'role': role})
 
 
-def handle_cases(has_demo_auth, query_params):
-    try:
-        pass
-    except Exception:
-        pass
-    
-    # Fallback Data
-    all_items = []
+def _get_mock_case(fir_id):
+    fir_id = int(fir_id)
     districts = ['Bangalore Urban', 'Mysore', 'Hubli-Dharwad', 'Mangalore']
     crimes = ['Cyber Crime', 'Theft', 'Assault', 'Fraud']
     
-    # Seed random to ensure the list is consistent across requests!
-    random.seed(42)
+    random.seed(fir_id + 1000)
+    crime = random.choice(crimes)
+    district = random.choice(districts)
+    status = 'Open' if fir_id % 3 == 0 else 'Closed'
     
-    for i in range(1, 101):
-        all_items.append({
-            'id': i,
-            'ROWID': i,
-            'fir_number': f'FIR/2026/{i:03d}',
-            'date': f'2026-07-{(i % 28) + 1:02d}',
-            'crime_type': random.choice(crimes),
-            'district': random.choice(districts),
-            'status': 'Open' if i % 3 == 0 else 'Closed',
-            'latitude': 12.9716 + (random.random() * 0.1),
-            'longitude': 77.5946 + (random.random() * 0.1)
-        })
-        
-    # Reset seed so we don't mess up other random calls in the app
+    victim_names = ["Rahul Sharma", "Priya Krishnan", "Anand Gowda", "Sneha Rao", "Amit Patel", "Deepa Naik", "Harish Kumar", "Kavitha G", "Ramesh Rao", "Sunitha P"]
+    accused_names = ["Kiran Gowda", "Sanjay Singh", "Unknown", "Vinay Kumar", "Sunil Naik", "Ravi Patil", "Manjunath S"]
+    
+    narratives = {
+        'Cyber Crime': 'Victim reported financial fraud via phishing link sent on WhatsApp.',
+        'Theft': 'Complainant reported theft of a locked two-wheeler parked outside the residence.',
+        'Assault': 'Physical altercation reported between two groups over a property dispute.',
+        'Fraud': 'Victim cheated of money by offering a fake work-from-home job opportunity.'
+    }
+    
+    victim = victim_names[fir_id % len(victim_names)]
+    accused = accused_names[fir_id % len(accused_names)]
+    narrative = narratives[crime]
+    
+    latitude = 12.9716 + (random.random() * 0.1)
+    longitude = 77.5946 + (random.random() * 0.1)
+    
     random.seed()
     
+    return {
+        'id': fir_id,
+        'ROWID': fir_id,
+        'fir_number': f'FIR/2026/{fir_id:03d}',
+        'date': f'2026-07-{(fir_id % 28) + 1:02d}',
+        'crime_type': crime,
+        'district': district,
+        'station': f'{district} Police Station',
+        'status': status,
+        'narrative': narrative,
+        'created_at': f'2026-07-{(fir_id % 28) + 1:02d}T10:00:00Z',
+        'accused': [{'id': 1, 'name': accused, 'role': 'Suspect' if accused != 'Unknown' else 'Scammer'}],
+        'victims': [{'id': 1, 'name': victim, 'age': 20 + (fir_id % 40)}],
+        'locations': [{'id': 1, 'latitude': latitude, 'longitude': longitude, 'address': f'Main Road, {district}'}],
+        'audit_trail': [{'id': 1, 'user_id': 1, 'action_type': 'CREATED', 'timestamp': '2026-07-20T10:00:00Z'}],
+        'latitude': latitude,
+        'longitude': longitude
+    }
+
+def generate_pdf_helper(title, lines):
+    stream_content = "BT\n/F1 12 Tf\n72 750 Td\n"
+    stream_content += f"({title}) Tj\n"
+    for line in lines:
+        line_escaped = line.replace("(", "\\(").replace(")", "\\)")
+        stream_content += f"0 -20 Td\n({line_escaped}) Tj\n"
+    stream_content += "ET\n"
+    
+    stream_len = len(stream_content)
+    
+    pdf = (
+        "%PDF-1.4\n"
+        "1 0 obj\n"
+        "<</Type /Catalog\n"
+        "/Pages 2 0 R>>\n"
+        "endobj\n"
+        "2 0 obj\n"
+        "<</Type /Pages\n"
+        "/Kids [3 0 R]\n"
+        "/Count 1>>\n"
+        "endobj\n"
+        "3 0 obj\n"
+        "<</Type /Page\n"
+        "/Parent 2 0 R\n"
+        "/Resources <<\n"
+        "/Font <<\n"
+        "/F1 4 0 R\n"
+        ">>\n"
+        ">>\n"
+        "/MediaBox [0 0 595 842]\n"
+        "/Contents 5 0 R>>\n"
+        "endobj\n"
+        "4 0 obj\n"
+        "<</Type /Font\n"
+        "/Subtype /Type1\n"
+        "/BaseFont /Courier>>\n"
+        "endobj\n"
+        f"5 0 obj\n<</Length {stream_len}>>\nstream\n"
+        f"{stream_content}"
+        "endstream\n"
+        "endobj\n"
+        "xref\n"
+        "0 6\n"
+        "0000000000 65535 f \n"
+        "trailer\n"
+        "<</Size 6\n"
+        "/Root 1 0 R>>\n"
+        "%%EOF\n"
+    )
+    return pdf
+
+def handle_cases(has_demo_auth, query_params):
+    all_items = []
+    for i in range(1, 101):
+        all_items.append(_get_mock_case(i))
+        
     # Apply filters
     filtered_items = all_items
     
@@ -283,41 +410,29 @@ def handle_cases(has_demo_auth, query_params):
         'pages': max(1, (len(filtered_items) + page_size - 1) // page_size)
     })
 
-
 def handle_case_detail(fir_id, has_demo_auth):
     try:
-        # if not has_demo_auth:
-        #     import zcatalyst_sdk as catalyst
-        #     app = catalyst.initialize()
-        #     zcql = app.zcql()
-        #     rows = zcql.execute_query(f'SELECT * FROM Cases WHERE ROWID = {fir_id} LIMIT 1')
-        #     if rows:
-        #         return json_response(rows[0])
-        pass
-    except Exception:
-        pass
-    
-    return json_response({
-        'id': int(fir_id),
-        'fir_number': f'FIR/2026/{str(fir_id).zfill(3)}',
-        'date': '2026-07-20',
-        'crime_type': 'Cyber Crime',
-        'district': 'Bangalore Urban',
-        'station': 'Central Police Station',
-        'status': 'Open',
-        'narrative': 'Victim reported financial fraud via phishing link sent on WhatsApp.',
-        'created_at': '2026-07-20T10:00:00Z',
-        'accused': [{'id': 1, 'name': 'Unknown', 'role': 'Scammer'}],
-        'victims': [{'id': 1, 'name': 'Rahul S', 'age': 34}],
-        'locations': [{'id': 1, 'latitude': 12.9716, 'longitude': 77.5946, 'address': 'MG Road, Bangalore'}],
-        'audit_trail': [{'id': 1, 'user_id': 1, 'action_type': 'CREATED', 'timestamp': '2026-07-20T10:00:00Z'}]
-    })
+        case = _get_mock_case(int(fir_id))
+        return json_response(case)
+    except Exception as e:
+        return json_response({'error': str(e)}, 500)
 
-def handle_hotspots(has_demo_auth):
-    return json_response([
-        {'latitude': 12.9716, 'longitude': 77.5946, 'district': 'Bangalore Urban', 'crime_type': 'Cyber Crime'},
-        {'latitude': 12.2958, 'longitude': 76.6394, 'district': 'Mysore', 'crime_type': 'Theft'}
-    ])
+def handle_hotspots(has_demo_auth, query_params):
+    data = [
+        {'latitude': 12.9716, 'longitude': 77.5946, 'district': 'Bangalore Urban', 'crime_type': 'Cyber Crime', 'fir_count': 142, 'most_frequent_crime_type': 'Cyber Crime', 'date_from': '2026-07-01', 'date_to': '2026-07-30', 'fir_ids': [1,2,3]},
+        {'latitude': 12.2958, 'longitude': 76.6394, 'district': 'Mysore', 'crime_type': 'Theft', 'fir_count': 56, 'most_frequent_crime_type': 'Theft', 'date_from': '2026-07-01', 'date_to': '2026-07-30', 'fir_ids': [4,5]},
+        {'latitude': 13.3409, 'longitude': 74.7421, 'district': 'Udupi', 'crime_type': 'Fraud', 'fir_count': 32, 'most_frequent_crime_type': 'Financial Fraud', 'date_from': '2026-07-10', 'date_to': '2026-07-25', 'fir_ids': [6,7]}
+    ]
+    
+    district = query_params.get('district', '').lower()
+    crime = query_params.get('crimeType', '').lower()
+    
+    if district:
+        data = [d for d in data if district in d['district'].lower()]
+    if crime:
+        data = [d for d in data if crime in d['crime_type'].lower()]
+        
+    return json_response(data)
 
 def handle_analytics(has_demo_auth):
     return json_response({
@@ -361,11 +476,12 @@ def handle_alerts(has_demo_auth):
     ], 'total': 2})
 
 def handle_offenders(has_demo_auth):
+    names = ["Ramesh Kumar", "Suresh Naik", "Ganesha Gowda", "Manjunath Patil", "Ravi Shankar", "Sanjay Singh", "Anil Reddy", "Prakash Rao", "Vijay Kumar", "Santosh K", "Kiran Y", "Raju N", "Pradeep M", "Vinay H", "Sunil P", "Harish G", "Mohan B", "Shivakumar T", "Naveen C", "Praveen V"]
     items = []
     for i in range(1, 21):
         items.append({
             'id': i,
-            'name': f'Accused {i}',
+            'name': names[i-1],
             'risk_score': random.randint(40, 95),
             'firs_count': random.randint(1, 5),
             'latest_crime': 'Theft'
@@ -373,9 +489,12 @@ def handle_offenders(has_demo_auth):
     return json_response({'items': items, 'total': 20, 'page': 1, 'page_size': 20, 'pages': 1})
 
 def handle_offender_detail(offender_id, has_demo_auth):
+    names = ["Ramesh Kumar", "Suresh Naik", "Ganesha Gowda", "Manjunath Patil", "Ravi Shankar", "Sanjay Singh", "Anil Reddy", "Prakash Rao", "Vijay Kumar", "Santosh K", "Kiran Y", "Raju N", "Pradeep M", "Vinay H", "Sunil P", "Harish G", "Mohan B", "Shivakumar T", "Naveen C", "Praveen V"]
+    idx = int(offender_id) - 1
+    name = names[idx] if 0 <= idx < len(names) else f'Accused {offender_id}'
     return json_response({
         'id': int(offender_id),
-        'name': f'Accused {offender_id}',
+        'name': name,
         'age': 28,
         'gender': 'Male',
         'address': 'Bangalore',
@@ -399,7 +518,33 @@ def handle_chat(body):
     
     last_msg = messages[-1].get('content', '').lower()
     
-    # ── Simulated RAG / Text-to-SQL logic for Hackathon ──
+    # ── Real Gemini LLM Integration ──
+    try:
+        import urllib.request
+        import json
+        # Retrieve the API key from Catalyst environment variables
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+        system_prompt = "You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Be concise, professional, and use markdown formatting. The user asks: "
+        
+        payload = json.dumps({
+            "contents": [{"parts": [{"text": system_prompt + last_msg}]}]
+        }).encode('utf-8')
+        
+        req = urllib.request.Request(url, data=payload, headers={
+            'Content-Type': 'application/json'
+        })
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_body = json.loads(response.read().decode())
+            reply = res_body['candidates'][0]['content']['parts'][0]['text']
+            return json_response({'reply': reply})
+    except Exception as e:
+        # Fallback to simulated RAG if API fails
+        logger.error(f"Gemini API failed: {e}")
+        pass
+    
+    # ── Simulated RAG / Text-to-SQL logic for Hackathon (Fallback) ──
     # This proves the AI is actually parsing the user's query and generating a dynamic response!
     
     found_districts = [d for d in ['koramangala', 'bangalore', 'mysore', 'hubli', 'mangalore'] if d in last_msg]

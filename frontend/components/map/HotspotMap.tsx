@@ -92,7 +92,7 @@ export default function HotspotMap({ hotspots, timeFilter }: HotspotMapProps) {
       {visible.map((hotspot, idx) => {
         const colour = heatColour(hotspot.fir_count, maxCount);
         const hex = toHex(colour);
-        const radius = Math.sqrt(hotspot.fir_count) * 8;
+        const radius = Math.sqrt(hotspot.fir_count) * 2;
 
         return (
           <CircleMarker
