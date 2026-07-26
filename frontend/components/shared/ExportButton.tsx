@@ -31,7 +31,17 @@ export default function ExportButton({
     setError(null);
     try {
       const res = await api.get<{ url: string }>(endpoint);
-      window.open(res.data.url, "_blank");
+      const url = res.data.url;
+      if (url.startsWith('data:')) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'KSP_Profile_Export.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        window.open(url, "_blank");
+      }
     } catch (err: unknown) {
       const msg =
         (err as AxiosError<{ detail?: string }>)?.response?.data?.detail ??

@@ -61,9 +61,9 @@ export default function Home() {
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-          <a
+          <a 
             href="/login.html"
-            className="inline-flex items-center gap-2 rounded-xl bg-ksp-saffron px-6 py-3.5 text-sm font-bold text-ksp-navy shadow-xl shadow-ksp-saffron/20 hover:scale-105 transition-all"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-ksp-saffron px-8 py-4 text-base font-bold text-ksp-navy shadow-xl hover:bg-ksp-saffron/90 hover:scale-105 transition-all w-full sm:w-auto"
           >
             Access Intelligence Platform
             <ArrowRight className="h-4 w-4" />
