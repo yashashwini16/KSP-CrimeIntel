@@ -1,0 +1,17 @@
+{
+  "slate": [
+    {
+      "name": "web3",
+      "source": "frontend",
+      "build_command": "npm run build",
+      "build_path": "out"
+    }
+  ],
+  "functions": {
+    "targets": [
+      "ksp-backend"
+    ],
+    "ignore": [],
+    "source": "functions"
+  }
+}

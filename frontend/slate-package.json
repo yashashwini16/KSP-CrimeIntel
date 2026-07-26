@@ -1,0 +1,10 @@
+{
+  "name": "ksp-frontend-slate",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "npx serve .next -p 9000"
+  },
+  "dependencies": {
+    "serve": "^14.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "command": "node server.js",
+  "build_path": ".next/standalone",
+  "stack": "node22",
+  "memory": 512,
+  "env_variables": {
+    "NEXT_PUBLIC_API_URL": "https://ksp-crimeintel-60076939808.development.catalystserverless.in/server/ksp-backend",
+    "PORT": "9000",
+    "NODE_ENV": "production",
+    "HOSTNAME": "0.0.0.0"
+  }
+}
