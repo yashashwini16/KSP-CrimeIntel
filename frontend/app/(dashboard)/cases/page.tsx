@@ -87,11 +87,14 @@ function LoadingState() {
   );
 }
 
+import CaseDetailClient from "./[id]/CaseDetailClient";
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CasesPage() {
   const { locale } = useLocale();
 
+  const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
     keyword: "",
@@ -136,6 +139,15 @@ export default function CasesPage() {
       cancelled = true;
     };
   }, [page, filters]);
+
+  if (selectedCaseId !== null) {
+    return (
+      <CaseDetailClient
+        caseId={String(selectedCaseId)}
+        onBack={() => setSelectedCaseId(null)}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -204,12 +216,12 @@ export default function CasesPage() {
                 <span className="capitalize">{c.crime_type}</span>
               </span>
               <StatusBadge status={c.status} />
-              <Link
-                href={`/cases/${c.id}`}
-                className="text-primary text-xs hover:underline"
+              <button
+                onClick={() => setSelectedCaseId(c.id)}
+                className="text-primary text-xs hover:underline text-left"
               >
                 View →
-              </Link>
+              </button>
             </div>
           ))}
         </div>

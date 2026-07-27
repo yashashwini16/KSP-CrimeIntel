@@ -86,9 +86,12 @@ const emptyFilters: FilterState = {
 const inputClass =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring w-full";
 
+import OffenderDetailClient from "./[id]/OffenderDetailClient";
+
 export default function OffendersPage() {
   const { locale } = useLocale();
 
+  const [selectedOffenderId, setSelectedOffenderId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   // Draft filters (controlled inputs)
   const [draft, setDraft] = useState<FilterState>(emptyFilters);
@@ -142,6 +145,15 @@ export default function OffendersPage() {
     setDraft(emptyFilters);
     setApplied(emptyFilters);
     setPage(1);
+  }
+
+  if (selectedOffenderId !== null) {
+    return (
+      <OffenderDetailClient
+        offenderId={String(selectedOffenderId)}
+        onBack={() => setSelectedOffenderId(null)}
+      />
+    );
   }
 
   return (
@@ -281,12 +293,12 @@ export default function OffendersPage() {
                 {o.risk_score}
               </span>
               <span className="text-center">{o.fir_count}</span>
-              <Link
-                href={`/offenders/${o.id}`}
-                className="text-primary text-xs hover:underline"
+              <button
+                onClick={() => setSelectedOffenderId(o.id)}
+                className="text-primary text-xs hover:underline text-left"
               >
                 View →
-              </Link>
+              </button>
             </div>
           ))}
         </div>

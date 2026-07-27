@@ -13,10 +13,33 @@ import random
 
 logger = logging.getLogger()
 
+def get_catalyst_app():
+    from flask import request
+    try:
+        import zcatalyst_sdk
+        return zcatalyst_sdk.initialize(req=request)
+    except Exception as e:
+        logger.warning(f"Catalyst App local fallback mode. Reason: {e}")
+        return None
+
 def json_response(data, status=200):
     from flask import make_response, jsonify
     response = make_response(jsonify(data), status)
     return response
+
+def _parse_catalyst_json_col(val, default=""):
+    if not val:
+        return default
+    if isinstance(val, dict):
+        return val.get('name', default)
+    try:
+        import json
+        data = json.loads(val)
+        if isinstance(data, dict):
+            return data.get('name', default)
+    except Exception:
+        pass
+    return str(val)
 
 def is_demo_auth(headers_lc):
     auth = headers_lc.get('x-ksp-authorization', '')
@@ -96,10 +119,7 @@ def handler(request):
 
         # ── Audit & Import ────────────────────────────────────
         if '/api/audit' in path:
-            return json_response({'items': [
-                {'id': 1, 'user_id': 1, 'action_type': 'LOGIN', 'timestamp': '2026-07-25T10:00:00Z', 'ip_address': '192.168.1.5'},
-                {'id': 2, 'user_id': 1, 'action_type': 'VIEW_CASE', 'resource_id': '45', 'timestamp': '2026-07-25T10:05:00Z'}
-            ], 'total': 2})
+            return handle_audit(has_demo_auth)
         if '/api/import/preview' in path:
             return json_response({'headers': ['FIR No', 'Date', 'Type', 'District'], 'rows': [['FIR-2026-001', '2026-07-20', 'Theft', 'Bangalore']], 'total_rows': 1, 'valid_rows': 1, 'errors': []})
         if '/api/import/cases' in path:
@@ -244,7 +264,7 @@ def handler(request):
             })
 
         # ── Database Seeding ──────────────────────────────────
-        if path == '/api/admin/seed' and method == 'POST':
+        if path in ['/api/admin/seed', '/api/seed-db', '/api/seed']:
             return handle_seed_db()
 
         # ── 404 ───────────────────────────────────────────────
@@ -261,6 +281,26 @@ def handle_login(body):
     username = body.get('username', '').lower()
     password = body.get('password', '')
     
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            query = f"SELECT ROWID, username, password_hash, role FROM users WHERE username = '{username}' LIMIT 1"
+            rows = zcql.execute_query(query)
+            if rows:
+                user_data = rows[0].get('users', {})
+                db_password = user_data.get('password_hash', '')
+                db_role = user_data.get('role', 'investigator')
+                if password == db_password:
+                    payload = json.dumps({'sub': username, 'role': db_role})
+                    token = 'demo.' + base64.b64encode(payload.encode()).decode()
+                    return json_response({'access_token': token, 'username': username, 'role': db_role})
+                else:
+                    return json_response({'detail': 'Invalid username or password'}, 401)
+        except Exception as auth_err:
+            logger.warning(f"ZCQL auth failed, falling back to mock login. Reason: {auth_err}")
+            pass
+            
     if password != 'KSP2026!':
         return json_response({'detail': 'Invalid username or password'}, 401)
         
@@ -376,6 +416,70 @@ def generate_pdf_helper(title, lines):
     return pdf
 
 def handle_cases(has_demo_auth, query_params):
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            query = "SELECT ROWID, crime_no, case_no, crime_registered_date, brief_facts, latitude, longitude, district, police_station, crime_type, case_status FROM cases"
+            where_clauses = []
+            
+            ct_filter = query_params.get('crime_type', '')
+            if ct_filter:
+                where_clauses.append(f"crime_type LIKE '%{ct_filter}%'")
+            dist_filter = query_params.get('district', '')
+            if dist_filter:
+                where_clauses.append(f"district LIKE '%{dist_filter}%'")
+            kw_filter = query_params.get('keyword', '')
+            if kw_filter:
+                where_clauses.append(f"(case_no LIKE '%{kw_filter}%' OR crime_no LIKE '%{kw_filter}%' OR crime_type LIKE '%{kw_filter}%')")
+                
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+                
+            page = int(query_params.get('page', 1))
+            page_size = int(query_params.get('page_size', 20))
+            offset = (page - 1) * page_size
+            query += f" LIMIT {page_size} OFFSET {offset}"
+            
+            rows = zcql.execute_query(query)
+            items = []
+            for row in rows:
+                case_data = row.get('cases', {})
+                crime_type_str = _parse_catalyst_json_col(case_data.get('crime_type'), 'Cyber Crime')
+                district_str = _parse_catalyst_json_col(case_data.get('district'), 'Bangalore Urban')
+                status_str = _parse_catalyst_json_col(case_data.get('case_status'), 'Open')
+                fir_no = case_data.get('case_no') or case_data.get('crime_no') or f"FIR/2026/{case_data.get('ROWID')}"
+                
+                items.append({
+                    'id': int(case_data.get('ROWID', 0)),
+                    'ROWID': int(case_data.get('ROWID', 0)),
+                    'fir_number': fir_no,
+                    'date': case_data.get('crime_registered_date', '2026-07-20'),
+                    'crime_type': crime_type_str,
+                    'district': district_str,
+                    'status': status_str,
+                    'latitude': float(case_data.get('latitude', 12.9716)) if case_data.get('latitude') else 12.9716,
+                    'longitude': float(case_data.get('longitude', 77.5946)) if case_data.get('longitude') else 77.5946
+                })
+            
+            count_query = "SELECT COUNT(ROWID) FROM cases"
+            if where_clauses:
+                count_query += " WHERE " + " AND ".join(where_clauses)
+            count_rows = zcql.execute_query(count_query)
+            total = int(count_rows[0].get('cases', {}).get('ROWID', len(items))) if count_rows else len(items)
+            
+            return json_response({
+                'items': items,
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+                'pages': max(1, (total + page_size - 1) // page_size)
+            })
+        except Exception as db_err:
+            logger.error(f"ZCQL handle_cases error: {db_err}")
+            pass
+
+    # Fallback to Mock Data
     all_items = []
     for i in range(1, 101):
         all_items.append(_get_mock_case(i))
@@ -411,6 +515,38 @@ def handle_cases(has_demo_auth, query_params):
     })
 
 def handle_case_detail(fir_id, has_demo_auth):
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            rows = zcql.execute_query(f"SELECT ROWID, crime_no, case_no, crime_registered_date, brief_facts, latitude, longitude, district, police_station, crime_type, case_status FROM cases WHERE ROWID = '{fir_id}' LIMIT 1")
+            if rows:
+                case_data = rows[0].get('cases', {})
+                crime_type_str = _parse_catalyst_json_col(case_data.get('crime_type'), 'Cyber Crime')
+                district_str = _parse_catalyst_json_col(case_data.get('district'), 'Bangalore Urban')
+                station_str = _parse_catalyst_json_col(case_data.get('police_station'), 'Koramangala PS')
+                status_str = _parse_catalyst_json_col(case_data.get('case_status'), 'Open')
+                fir_no = case_data.get('case_no') or case_data.get('crime_no') or f"FIR/2026/{fir_id}"
+                
+                return json_response({
+                    'id': int(case_data.get('ROWID', fir_id)),
+                    'ROWID': int(case_data.get('ROWID', fir_id)),
+                    'fir_number': fir_no,
+                    'date': case_data.get('crime_registered_date', '2026-07-20'),
+                    'crime_type': crime_type_str,
+                    'district': district_str,
+                    'station': station_str,
+                    'status': status_str,
+                    'narrative': case_data.get('brief_facts', 'No narrative details provided.'),
+                    'created_at': case_data.get('crime_registered_date', '2026-07-20T10:00:00Z'),
+                    'accused': [{'id': 1, 'name': 'Unknown', 'role': 'Suspect'}],
+                    'victims': [{'id': 1, 'name': 'Rahul Sharma', 'age': 30}],
+                    'locations': [{'id': 1, 'latitude': float(case_data.get('latitude', 12.9716)) if case_data.get('latitude') else 12.9716, 'longitude': float(case_data.get('longitude', 77.5946)) if case_data.get('longitude') else 77.5946, 'address': station_str}]
+                })
+        except Exception as db_err:
+            logger.error(f"ZCQL handle_case_detail error: {db_err}")
+            pass
+
     try:
         case = _get_mock_case(int(fir_id))
         return json_response(case)
@@ -470,12 +606,51 @@ def handle_forecast(has_demo_auth):
     })
 
 def handle_alerts(has_demo_auth):
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            rows = zcql.execute_query("SELECT ROWID, title, severity, created_at FROM alerts")
+            items = []
+            for row in rows:
+                data = row.get('alerts', {})
+                items.append({
+                    'id': int(data.get('ROWID', 0)),
+                    'title': data.get('title', ''),
+                    'severity': data.get('severity', 'medium'),
+                    'created_at': data.get('created_at', '')
+                })
+            return json_response({'items': items, 'total': len(items)})
+        except Exception as db_err:
+            logger.error(f"ZCQL handle_alerts error: {db_err}")
+            pass
+
     return json_response({'items': [
         {'id': 1, 'title': 'High volume of Cyber Crimes in Bangalore', 'severity': 'high', 'created_at': '2026-07-25T10:00:00Z'},
         {'id': 2, 'title': 'New Pattern: UPI Fraud in Mysore', 'severity': 'medium', 'created_at': '2026-07-24T14:30:00Z'}
     ], 'total': 2})
 
 def handle_offenders(has_demo_auth):
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            rows = zcql.execute_query("SELECT ROWID, name, risk_score, firs_count, latest_crime FROM offenders")
+            items = []
+            for row in rows:
+                data = row.get('offenders', {})
+                items.append({
+                    'id': int(data.get('ROWID', 0)),
+                    'name': data.get('name', ''),
+                    'risk_score': int(data.get('risk_score', 50)),
+                    'firs_count': int(data.get('firs_count', 1)),
+                    'latest_crime': data.get('latest_crime', 'Theft')
+                })
+            return json_response({'items': items, 'total': len(items), 'page': 1, 'page_size': len(items), 'pages': 1})
+        except Exception as db_err:
+            logger.error(f"ZCQL handle_offenders error: {db_err}")
+            pass
+
     names = ["Ramesh Kumar", "Suresh Naik", "Ganesha Gowda", "Manjunath Patil", "Ravi Shankar", "Sanjay Singh", "Anil Reddy", "Prakash Rao", "Vijay Kumar", "Santosh K", "Kiran Y", "Raju N", "Pradeep M", "Vinay H", "Sunil P", "Harish G", "Mohan B", "Shivakumar T", "Naveen C", "Praveen V"]
     items = []
     for i in range(1, 21):
@@ -488,7 +663,66 @@ def handle_offenders(has_demo_auth):
         })
     return json_response({'items': items, 'total': 20, 'page': 1, 'page_size': 20, 'pages': 1})
 
+def handle_audit(has_demo_auth):
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            rows = zcql.execute_query("SELECT ROWID, user_id, action, resource, deatils, CREATEDTIME FROM audit_logs")
+            items = []
+            for row in rows:
+                data = row.get('audit_logs', {})
+                items.append({
+                    'id': int(data.get('ROWID', 0)),
+                    'user_id': data.get('user_id', ''),
+                    'action_type': data.get('action', ''),
+                    'resource_id': data.get('resource', ''),
+                    'deatils': data.get('deatils', ''),
+                    'timestamp': data.get('CREATEDTIME', '')
+                })
+            return json_response({'items': items, 'total': len(items)})
+        except Exception as db_err:
+            logger.error(f"ZCQL handle_audit error: {db_err}")
+            pass
+
+    return json_response({'items': [
+        {'id': 1, 'user_id': 1, 'action_type': 'LOGIN', 'timestamp': '2026-07-25T10:00:00Z', 'ip_address': '192.168.1.5'},
+        {'id': 2, 'user_id': 1, 'action_type': 'VIEW_CASE', 'resource_id': '45', 'timestamp': '2026-07-25T10:05:00Z'}
+    ], 'total': 2})
+
 def handle_offender_detail(offender_id, has_demo_auth):
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            zcql = catalyst_app.zcql()
+            rows = zcql.execute_query(f"SELECT ROWID, name, risk_score, firs_count, latest_crime FROM offenders WHERE ROWID = '{offender_id}' LIMIT 1")
+            if rows:
+                data = rows[0].get('offenders', {})
+                name = data.get('name', '')
+                risk_score = int(data.get('risk_score', 50))
+                fir_count = int(data.get('firs_count', 1))
+                latest_crime = data.get('latest_crime', 'Theft')
+                
+                return json_response({
+                    'id': int(data.get('ROWID', offender_id)),
+                    'name': name,
+                    'age': 28,
+                    'gender': 'Male',
+                    'address': 'Bangalore',
+                    'risk_score': risk_score,
+                    'created_at': '2026-01-01T00:00:00Z',
+                    'firs': [
+                        {'id': 1, 'fir_number': f'FIR/2026/00{offender_id}', 'date': '2026-07-20', 'crime_type': latest_crime, 'district': 'Bangalore', 'status': 'Open'}
+                    ],
+                    'links': [
+                        {'id': 1, 'linked_accused_id': 2, 'linked_accused_name': 'Associate A', 'link_type': 'Co-accused', 'weight': 0.8},
+                        {'id': 2, 'linked_accused_id': 3, 'linked_accused_name': 'Associate B', 'link_type': 'Known Accomplice', 'weight': 0.6}
+                    ]
+                })
+        except Exception as db_err:
+            logger.error(f"ZCQL handle_offender_detail error: {db_err}")
+            pass
+
     names = ["Ramesh Kumar", "Suresh Naik", "Ganesha Gowda", "Manjunath Patil", "Ravi Shankar", "Sanjay Singh", "Anil Reddy", "Prakash Rao", "Vijay Kumar", "Santosh K", "Kiran Y", "Raju N", "Pradeep M", "Vinay H", "Sunil P", "Harish G", "Mohan B", "Shivakumar T", "Naveen C", "Praveen V"]
     idx = int(offender_id) - 1
     name = names[idx] if 0 <= idx < len(names) else f'Accused {offender_id}'
@@ -511,36 +745,136 @@ def handle_offender_detail(offender_id, has_demo_auth):
         ]
     })
 
+def get_zoho_oauth_token():
+    # 1. Try to fetch token from Catalyst Connections component first (easiest & recommended)
+    catalyst_app = get_catalyst_app()
+    if catalyst_app:
+        try:
+            creds = catalyst_app.connections().get_connection_credentials('quickml')
+            headers = {}
+            if hasattr(creds, 'headers'):
+                headers = creds.headers
+            elif isinstance(creds, dict):
+                headers = creds.get('headers', {})
+                
+            auth_header = headers.get('Authorization') if isinstance(headers, dict) else None
+            if auth_header:
+                if auth_header.startswith('Bearer '):
+                    token = auth_header.split(' ')[1]
+                else:
+                    token = auth_header
+                logger.info("Successfully fetched token from Catalyst Connection 'quickml'.")
+                return token
+        except Exception as conn_err:
+            logger.warning(f"Catalyst Connection 'quickml' lookup failed: {conn_err}")
+            pass
+
+    # 2. Fall back to manual OAuth flow using environment variables
+    client_id = os.environ.get("ZOHO_CLIENT_ID", "")
+    client_secret = os.environ.get("ZOHO_CLIENT_SECRET", "")
+    refresh_token = os.environ.get("ZOHO_REFRESH_TOKEN", "")
+    
+    if not client_id or not client_secret or not refresh_token:
+        return None
+        
+    try:
+        import urllib.request
+        import urllib.parse
+        import json
+        accounts_url = os.environ.get("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.in")
+        url = f"{accounts_url}/oauth/v2/token"
+        
+        data = urllib.parse.urlencode({
+            'refresh_token': refresh_token,
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'grant_type': 'refresh_token'
+        }).encode('utf-8')
+        
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        
+        with urllib.request.urlopen(req, timeout=5) as response:
+            res_data = json.loads(response.read().decode())
+            token = res_data.get("access_token")
+            if not token:
+                logger.warning(f"Zoho OAuth token request failed. Server response: {res_data}")
+            else:
+                logger.info("Successfully retrieved Zoho OAuth Token via env variables.")
+            return token
+    except Exception as e:
+        logger.error(f"Failed to get Zoho OAuth token: {e}")
+        return None
+
 def handle_chat(body):
     messages = body.get('messages', [])
     if not messages:
         return json_response({'reply': 'Hello! I am the KSP CrimeIntel AI Assistant. How can I help you today?'})
     
-    last_msg = messages[-1].get('content', '').lower()
+    last_msg = messages[-1].get('content', '')
     
-    # ── Real Gemini LLM Integration ──
+    # ── Zoho QuickML GLM Integration (Primary) ──
+    project_id = os.environ.get("ZOHO_PROJECT_ID", "")
+    quickml_url = os.environ.get("ZOHO_QUICKML_ENDPOINT", "")
+    oauth_token = get_zoho_oauth_token()
+    
+    if oauth_token and (quickml_url or project_id):
+        try:
+            import urllib.request
+            import json
+            
+            url = quickml_url
+            if not url and project_id:
+                url = f"https://api.catalyst.zoho.in/quickml/v1/project/{project_id}/glm/chat"
+                
+            payload = json.dumps({
+                "messages": [
+                    {
+                        "role": "system", 
+                        "content": "You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Respond in the same language the user asks (English or Kannada). If the user asks in Kannada, reply in Kannada."
+                    },
+                    {"role": "user", "content": last_msg}
+                ]
+            }).encode('utf-8')
+            
+            req = urllib.request.Request(url, data=payload, headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {oauth_token}'
+            })
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                res_data = json.loads(response.read().decode())
+                # QuickML GLM standard reply structure
+                reply = res_data.get("choices", [{}])[0].get("message", {}).get("content")
+                if reply:
+                    return json_response({'reply': reply + "\n\n*(Response generated by Zoho QuickML GLM)*"})
+        except Exception as qml_err:
+            logger.error(f"Zoho QuickML GLM failed: {qml_err}")
+            pass
+
+    # ── Real Gemini LLM Integration (Secondary Fallback) ──
     try:
         import urllib.request
         import json
         # Retrieve the API key from Catalyst environment variables
         api_key = os.environ.get("GEMINI_API_KEY", "")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
-        system_prompt = "You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Be concise, professional, and use markdown formatting. The user asks: "
-        
-        payload = json.dumps({
-            "contents": [{"parts": [{"text": system_prompt + last_msg}]}]
-        }).encode('utf-8')
-        
-        req = urllib.request.Request(url, data=payload, headers={
-            'Content-Type': 'application/json'
-        })
-        
-        with urllib.request.urlopen(req, timeout=10) as response:
-            res_body = json.loads(response.read().decode())
-            reply = res_body['candidates'][0]['content']['parts'][0]['text']
-            return json_response({'reply': reply})
+        if api_key:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+            system_prompt = "You are the KSP CrimeIntel AI Assistant. Respond in the same language the user asks (English or Kannada). If they ask in Kannada, reply in Kannada. The user asks: "
+            
+            payload = json.dumps({
+                "contents": [{"parts": [{"text": system_prompt + last_msg}]}]
+            }).encode('utf-8')
+            
+            req = urllib.request.Request(url, data=payload, headers={
+                'Content-Type': 'application/json'
+            })
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                res_body = json.loads(response.read().decode())
+                reply = res_body['candidates'][0]['content']['parts'][0]['text']
+                return json_response({'reply': reply + "\n\n*(Response generated by Gemini AI fallback)*"})
     except Exception as e:
-        # Fallback to simulated RAG if API fails
         logger.error(f"Gemini API failed: {e}")
         pass
     
@@ -580,17 +914,68 @@ def handle_seed_db():
         app = catalyst.initialize()
         datastore = app.datastore()
         
-        # We assume they created a table called 'Cases' with columns 'fir_number', 'crime_type', 'district'
-        table = datastore.table('Cases')
+        results = {}
         
-        # Insert some dummy records
-        records = [
-            {'fir_number': 'FIR/2026/001', 'crime_type': 'Cyber Crime', 'district': 'Bangalore Urban', 'status': 'Open'},
-            {'fir_number': 'FIR/2026/002', 'crime_type': 'Theft', 'district': 'Mysore', 'status': 'Closed'},
-            {'fir_number': 'FIR/2026/003', 'crime_type': 'Assault', 'district': 'Hubli-Dharwad', 'status': 'Open'}
-        ]
-        
-        inserted = table.insert_rows(records)
-        return json_response({'status': 'success', 'message': f'Inserted {len(inserted)} records into Cases table!', 'inserted': inserted})
+        # 1. Seed 'cases' table
+        try:
+            cases_table = datastore.table('cases')
+            case_records = [
+                {
+                    'case_no': 'FIR/2026/001', 
+                    'crime_no': 'CRM/2026/001', 
+                    'crime_registered_date': '2026-07-02', 
+                    'brief_facts': 'Phishing scam targeting online banking credentials.',
+                    'latitude': 12.9716, 
+                    'longitude': 77.5946,
+                    'district': '{"name":"Bengaluru Urban"}',
+                    'police_station': '{"name":"Koramangala Police Station"}',
+                    'crime_type': '{"name":"Theft"}',
+                    'case_status': '{"name":"Closed"}'
+                },
+                {
+                    'case_no': 'FIR/2026/002', 
+                    'crime_no': 'CRM/2026/002', 
+                    'crime_registered_date': '2026-07-03', 
+                    'brief_facts': 'Stolen vehicle reported parked near commercial street.',
+                    'latitude': 12.2958, 
+                    'longitude': 76.6394,
+                    'district': '{"name":"Mysuru"}',
+                    'police_station': '{"name":"Mysuru North Police Station"}',
+                    'crime_type': '{"name":"Robbery"}',
+                    'case_status': '{"name":"Closed"}'
+                },
+                {
+                    'case_no': 'FIR/2026/003', 
+                    'crime_no': 'CRM/2026/003', 
+                    'crime_registered_date': '2026-07-04', 
+                    'brief_facts': 'Physical confrontation following traffic altercation.',
+                    'latitude': 15.3647, 
+                    'longitude': 75.1240,
+                    'district': '{"name":"Mysuru"}',
+                    'police_station': '{"name":"Mysuru North Police Station"}',
+                    'crime_type': '{"name":"Robbery"}',
+                    'case_status': '{"name":"Open"}'
+                }
+            ]
+            inserted_cases = cases_table.insert_rows(case_records)
+            results['cases_seeded'] = len(inserted_cases)
+        except Exception as ce:
+            results['cases_error'] = str(ce)
+            
+        # 2. Seed 'users' table
+        try:
+            users_table = datastore.table('users')
+            user_records = [
+                {'username': 'investigator', 'password_hash': 'password123', 'role': 'investigator'},
+                {'username': 'supervisor', 'password_hash': 'password123', 'role': 'supervisor'},
+                {'username': 'analyst', 'password_hash': 'password123', 'role': 'analyst'},
+                {'username': 'policymaker', 'password_hash': 'password123', 'role': 'policymaker'}
+            ]
+            inserted_users = users_table.insert_rows(user_records)
+            results['users_seeded'] = len(inserted_users)
+        except Exception as ue:
+            results['users_error'] = str(ue)
+            
+        return json_response({'status': 'success', 'results': results})
     except Exception as e:
         return json_response({'status': 'error', 'message': str(e)})

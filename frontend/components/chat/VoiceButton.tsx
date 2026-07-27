@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Mic, MicOff } from "lucide-react";
 import { useVoice } from "@/hooks/useVoice";
+import { useLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface VoiceButtonProps {
@@ -12,7 +13,8 @@ interface VoiceButtonProps {
 }
 
 export default function VoiceButton({ onTranscript, disabled }: VoiceButtonProps) {
-  const voice = useVoice();
+  const { locale } = useLocale();
+  const voice = useVoice(locale);
   const onTranscriptRef = useRef(onTranscript);
 
   // Keep ref current so the effect below doesn't need onTranscript in its dep array

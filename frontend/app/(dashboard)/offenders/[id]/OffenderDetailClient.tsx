@@ -147,11 +147,16 @@ function MiniCriminalGraph({ links, offenderId }: { links: CriminalLink[]; offen
 
 // ─── Page Component ─────────────────────────────────────────────────────────────
 
-export default function OffenderDetailClient() {
+interface OffenderDetailClientProps {
+  offenderId?: string;
+  onBack?: () => void;
+}
+
+export default function OffenderDetailClient({ offenderId, onBack }: OffenderDetailClientProps) {
   const params = useParams();
   const router = useRouter();
   const { locale } = useLocale();
-  const id = String(params.id);
+  const id = offenderId || String(params.id);
 
   const [data, setData] = useState<OffenderDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,7 +176,11 @@ export default function OffenderDetailClient() {
         if (cancelled) return;
         const status = (err as AxiosError)?.response?.status;
         if (status === 404) {
-          router.replace("/offenders");
+          if (onBack) {
+            onBack();
+          } else {
+            router.replace("/offenders");
+          }
           return;
         }
         setError(
@@ -185,7 +194,7 @@ export default function OffenderDetailClient() {
     return () => {
       cancelled = true;
     };
-  }, [id, router, locale]);
+  }, [id, router, locale, onBack]);
 
   if (loading) {
     return <LoadingSpinner />;
@@ -204,13 +213,23 @@ export default function OffenderDetailClient() {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-3xl">
       {/* Back */}
-      <Link
-        href="/offenders"
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
-      >
-        <ArrowLeft size={14} />
-        {t("common.back", locale)}
-      </Link>
+      {onBack ? (
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
+        >
+          <ArrowLeft size={14} />
+          {t("common.back", locale)}
+        </button>
+      ) : (
+        <Link
+          href="/offenders"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
+        >
+          <ArrowLeft size={14} />
+          {t("common.back", locale)}
+        </Link>
+      )}
 
       {/* Header with photo + risk gauge */}
       <div className="flex items-start gap-6">

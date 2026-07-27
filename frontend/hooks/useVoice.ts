@@ -45,7 +45,7 @@ declare global {
   }
 }
 
-export function useVoice() {
+export function useVoice(locale?: string) {
   const [state, setState] = useState<VoiceState>({
     isListening: false,
     transcript: "",
@@ -63,7 +63,7 @@ export function useVoice() {
     async (blob: Blob): Promise<void> => {
       if (!sttEndpoint) {
         // Fallback: browser Web Speech API
-        useBrowserSTT(setPartial);
+        useBrowserSTT(setPartial, locale);
         return;
       }
       try {
@@ -80,7 +80,7 @@ export function useVoice() {
         setPartial({ error: "Speech recognition failed. Please try again." });
       }
     },
-    [sttEndpoint],
+    [sttEndpoint, locale],
   );
 
   const startListening = useCallback(async (): Promise<void> => {
@@ -125,7 +125,8 @@ export function useVoice() {
 
 // ── Browser STT fallback ─────────────────────────────────────────────────────
 
-function useBrowserSTT(set: (p: Partial<VoiceState>) => void): void {
+// Simple mapping of locales to BCP 47 codes
+function useBrowserSTT(set: (p: Partial<VoiceState>) => void, locale?: string): void {
   if (typeof window === "undefined") return;
   const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
   if (!Ctor) {
@@ -136,7 +137,7 @@ function useBrowserSTT(set: (p: Partial<VoiceState>) => void): void {
     return;
   }
   const recognition = new Ctor();
-  recognition.lang = "en-IN";
+  recognition.lang = locale === "kn" ? "kn-IN" : "en-IN";
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.onresult = (e: SpeechRecognitionEvent) => {

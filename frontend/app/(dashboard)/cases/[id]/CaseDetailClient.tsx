@@ -139,11 +139,16 @@ function AuditTimeline({ entries }: { entries: AuditEntry[] }) {
 
 // ─── Page Component ─────────────────────────────────────────────────────────────
 
-export default function CaseDetailClient() {
+interface CaseDetailClientProps {
+  caseId?: string;
+  onBack?: () => void;
+}
+
+export default function CaseDetailClient({ caseId, onBack }: CaseDetailClientProps) {
   const params = useParams();
   const router = useRouter();
   const { locale } = useLocale();
-  const id = String(params.id);
+  const id = caseId || String(params.id);
 
   const [data, setData] = useState<CaseDetail | null>(null);
   const [similar, setSimilar] = useState<SimilarCase[]>([]);
@@ -169,7 +174,11 @@ export default function CaseDetailClient() {
         if (cancelled) return;
         const status = (err as AxiosError)?.response?.status;
         if (status === 404) {
-          router.replace("/cases");
+          if (onBack) {
+            onBack();
+          } else {
+            router.replace("/cases");
+          }
           return;
         }
         setError(
@@ -183,7 +192,7 @@ export default function CaseDetailClient() {
     return () => {
       cancelled = true;
     };
-  }, [id, router, locale]);
+  }, [id, router, locale, onBack]);
 
   if (loading) {
     return <LoadingSpinner />;
@@ -202,13 +211,23 @@ export default function CaseDetailClient() {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-4xl">
       {/* Back */}
-      <Link
-        href="/cases"
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
-      >
-        <ArrowLeft size={14} />
-        {t("common.back", locale)}
-      </Link>
+      {onBack ? (
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
+        >
+          <ArrowLeft size={14} />
+          {t("common.back", locale)}
+        </button>
+      ) : (
+        <Link
+          href="/cases"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground w-fit"
+        >
+          <ArrowLeft size={14} />
+          {t("common.back", locale)}
+        </Link>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">

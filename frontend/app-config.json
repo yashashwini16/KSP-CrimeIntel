@@ -4,7 +4,7 @@
   "stack": "node22",
   "memory": 512,
   "env_variables": {
-    "NEXT_PUBLIC_API_URL": "https://ksp-crimeintel-60076939808.development.catalystserverless.in/server/ksp-backend",
+    "NEXT_PUBLIC_API_URL": "https://ksp-crimeintel-60076939808.development.catalystserverless.in/server/KSP",
     "PORT": "9000",
     "NODE_ENV": "production",
     "HOSTNAME": "0.0.0.0"
