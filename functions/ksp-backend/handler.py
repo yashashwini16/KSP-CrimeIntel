@@ -827,9 +827,27 @@ def handle_chat(body):
             if not url and project_id:
                 url = f"https://api.catalyst.zoho.in/quickml/v1/project/{project_id}/glm/chat"
                 
-            payload = json.dumps({
-                "prompt": f"System: You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Respond in the same language the user asks (English or Kannada). If the user asks in Kannada, reply in Kannada.\n\nUser: {last_msg}"
-            }).encode('utf-8')
+            payload_data = {
+                "prompt": f"System: You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Respond in the same language the user asks (English or Kannada). If the user asks in Kannada, reply in Kannada.\n\nUser: {last_msg}",
+                "messages": [
+                    {
+                        "role": "system", 
+                        "content": "You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Respond in the same language the user asks (English or Kannada). If the user asks in Kannada, reply in Kannada."
+                    },
+                    {"role": "user", "content": last_msg}
+                ],
+                "data": {
+                    "prompt": f"System: You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Respond in the same language the user asks (English or Kannada). If the user asks in Kannada, reply in Kannada.\n\nUser: {last_msg}",
+                    "messages": [
+                        {
+                            "role": "system", 
+                            "content": "You are the KSP CrimeIntel AI Assistant. You help police officers analyze crime data. Respond in the same language the user asks (English or Kannada). If the user asks in Kannada, reply in Kannada."
+                        },
+                        {"role": "user", "content": last_msg}
+                    ]
+                }
+            }
+            payload = json.dumps(payload_data).encode('utf-8')
             
             from flask import request
             env = request.headers.get('Environment', 'Development')

@@ -35,7 +35,7 @@ By leveraging Advanced Analytics, Network Mapping, and QuickML forecasting, Crim
 
 ## 🔐 Demo Credentials
 
-To test the application's Role-Based Access Control, use the password `password123` with any of the following usernames:
+To test the application's Role-Based Access Control, use the password **`KSP2026!`** with any of the following usernames:
 
 - **`investigator`**: Access to AI Chat and specific FIR case management.
 - **`supervisor`**: Access to Real-time Alerts and overarching command views.
