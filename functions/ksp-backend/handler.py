@@ -837,15 +837,26 @@ def handle_chat(body):
                 ]
             }).encode('utf-8')
             
+            from flask import request
+            env = request.headers.get('Environment', 'Development')
+            org_id = request.headers.get('CATALYST-ORG', '')
+            
             # Format Authorization header (Zoho-oauthtoken is required for Zoho REST APIs)
             auth_header_value = oauth_token
             if not (auth_header_value.lower().startswith('zoho-oauthtoken ') or auth_header_value.lower().startswith('bearer ')):
                 auth_header_value = f'Zoho-oauthtoken {oauth_token}'
                 
-            req = urllib.request.Request(url, data=payload, headers={
+            headers = {
                 'Content-Type': 'application/json',
-                'Authorization': auth_header_value
-            })
+                'Authorization': auth_header_value,
+                'Content-Length': str(len(payload)),
+                'Environment': env
+            }
+            if org_id:
+                headers['CATALYST-ORG'] = org_id
+                
+            logger.info(f"Sending QuickML request with headers: { {k: v for k, v in headers.items() if k != 'Authorization'} }")
+            req = urllib.request.Request(url, data=payload, headers=headers)
             
             with urllib.request.urlopen(req, timeout=10) as response:
                 res_data = json.loads(response.read().decode())
